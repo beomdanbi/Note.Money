@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(python --version 2>&1; Write-Output \"----\"; where.exe python 2>&1)",
+      "PowerShell(Get-Command *)",
+      "Bash(python -c ' *)",
+      "Bash(PYTHONIOENCODING=utf-8 grep -nE 'st\\\\.\\(header|subheader|markdown\\)\\\\\\(' ui_streamlit.py)"
+    ]
+  }
+}
