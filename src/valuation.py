@@ -85,16 +85,26 @@ def portfolio_summary(on_date: date) -> dict:
 
 def save_monthly_snapshot(on_date: date) -> None:
     d = month_end(on_date)
+    # 1) 계좌 목록 조회 후 connection 닫기
     with get_conn() as conn:
-        accs = conn.execute("SELECT id, code FROM accounts WHERE active = 1").fetchall()
-        for a in accs:
-            p = account_principal(a["id"])
-            mv = account_market_value(a["code"], d)
-            ret = mv - p
-            pct = (ret / p * 100) if p > 0 else 0.0
-            conn.execute(
-                """INSERT OR REPLACE INTO monthly_snapshots
-                   (account_id, date, principal, market_value, return_amount, return_pct)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
-                (a["id"], d.isoformat(), p, mv, ret, pct),
-            )
+        accs = [(a["id"], a["code"]) for a in
+                conn.execute("SELECT id, code FROM accounts WHERE active = 1").fetchall()]
+
+    # 2) 시세 조회/계산 단계에서는 외부 connection을 쥐지 않음
+    #    (resolve_price가 내부적으로 prices 테이블에 INSERT하므로 lock 충돌 방지)
+    snapshots: list[tuple] = []
+    for aid, code in accs:
+        p = account_principal(aid)
+        mv = account_market_value(code, d)
+        ret = mv - p
+        pct = (ret / p * 100) if p > 0 else 0.0
+        snapshots.append((aid, d.isoformat(), p, mv, ret, pct))
+
+    # 3) 새 connection으로 일괄 저장
+    with get_conn() as conn:
+        conn.executemany(
+            """INSERT OR REPLACE INTO monthly_snapshots
+               (account_id, date, principal, market_value, return_amount, return_pct)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            snapshots,
+        )

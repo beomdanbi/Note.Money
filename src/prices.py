@@ -2,10 +2,23 @@
 from __future__ import annotations
 
 import calendar
+import contextlib
+import io
 from datetime import date, datetime, timedelta
 from typing import Iterable
 
 from .db import get_conn
+
+
+@contextlib.contextmanager
+def _silence_pykrx():
+    """pykrx가 stdout/stderr로 직접 print하는 에러 메시지를 억제."""
+    buf_out, buf_err = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(buf_out), contextlib.redirect_stderr(buf_err):
+        yield
+
+
+_ETF_SET: set[str] | None = None
 
 
 def month_end(d: date) -> date:
@@ -53,28 +66,57 @@ def _proxy_ticker(ticker: str) -> str | None:
         return row["proxy_ticker"] if row else None
 
 
+def _is_etf_ticker(ticker: str) -> bool | None:
+    """ETF 여부를 pykrx로 확인 (리스트 캐시). 실패시 None."""
+    global _ETF_SET
+    if _ETF_SET is None:
+        try:
+            from pykrx import stock
+            with _silence_pykrx():
+                tickers = stock.get_etf_ticker_list()
+            _ETF_SET = set(tickers) if tickers else set()
+        except Exception:
+            return None
+    return ticker in _ETF_SET
+
+
 def fetch_krx_close(ticker: str, d: date) -> float | None:
     """pykrx로 해당 일자 또는 그 이전 최근 영업일 종가 조회."""
     try:
         from pykrx import stock
     except ImportError:
         return None
-    # 역방향 5거래일 탐색
+    is_etf = _is_etf_ticker(ticker)  # True/False/None(알수없음)
+    # 역방향 10일 탐색
     cur = d
     for _ in range(10):
         s = cur.strftime("%Y%m%d")
-        try:
-            df = stock.get_etf_ohlcv_by_date(s, s, ticker)
-            if df is not None and not df.empty:
-                return float(df["종가"].iloc[-1])
-        except Exception:
-            pass
-        try:
-            df = stock.get_market_ohlcv_by_date(s, s, ticker)
-            if df is not None and not df.empty:
-                return float(df["종가"].iloc[-1])
-        except Exception:
-            pass
+        # ETF면 ETF API만, 주식이면 stock API만, 불확실하면 stock 먼저 시도
+        if is_etf is True:
+            try:
+                with _silence_pykrx():
+                    df = stock.get_etf_ohlcv_by_date(s, s, ticker)
+                if df is not None and not df.empty:
+                    return float(df["종가"].iloc[-1])
+            except Exception:
+                pass
+        else:
+            try:
+                with _silence_pykrx():
+                    df = stock.get_market_ohlcv_by_date(s, s, ticker)
+                if df is not None and not df.empty:
+                    return float(df["종가"].iloc[-1])
+            except Exception:
+                pass
+            # 주식 조회 실패 + ETF 여부 불확실일 때만 ETF로 폴백
+            if is_etf is None:
+                try:
+                    with _silence_pykrx():
+                        df = stock.get_etf_ohlcv_by_date(s, s, ticker)
+                    if df is not None and not df.empty:
+                        return float(df["종가"].iloc[-1])
+                except Exception:
+                    pass
         cur = cur - timedelta(days=1)
     return None
 

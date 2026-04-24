@@ -91,8 +91,10 @@ def get_conn():
     """sqlite 연결 + 자동 commit/rollback + close.
     Windows에서 파일 핸들이 누적되어 DB 파일 조작이 막히는 문제 방지."""
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=10)
     conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA busy_timeout = 5000")
     conn.row_factory = sqlite3.Row
     try:
         yield conn

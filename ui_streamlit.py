@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import date
 
+import altair as alt
 import pandas as pd
 import streamlit as st
 
@@ -59,6 +60,40 @@ st.markdown(
     /* 메뉴 글자 크기 살짝 키움 */
     section[data-testid="stSidebar"] div[role="radiogroup"] label p {
         font-size: 0.95rem;
+    }
+    /* 메인 콘텐츠 제목 크기 축소 */
+    section[data-testid="stMain"] h1 {
+        font-size: 1.75rem;
+        padding-top: 0.5rem;
+        padding-bottom: 0.5rem;
+    }
+    section[data-testid="stMain"] h2 {
+        font-size: 1.35rem;
+        padding-top: 0.4rem;
+        padding-bottom: 0.4rem;
+    }
+    section[data-testid="stMain"] h3 {
+        font-size: 1.15rem;
+        padding-top: 0.35rem;
+        padding-bottom: 0.35rem;
+    }
+    section[data-testid="stMain"] h4 {
+        font-size: 1.0rem;
+        padding-top: 0.3rem;
+        padding-bottom: 0.3rem;
+    }
+    /* 대시보드 메트릭(총 원금/평가액 등) 크기 축소 */
+    section[data-testid="stMain"] [data-testid="stMetricValue"] {
+        font-size: 1.35rem;
+    }
+    section[data-testid="stMain"] [data-testid="stMetricValue"] > div {
+        font-size: 1.35rem;
+    }
+    section[data-testid="stMain"] [data-testid="stMetricLabel"] p {
+        font-size: 0.85rem;
+    }
+    section[data-testid="stMain"] [data-testid="stMetricDelta"] {
+        font-size: 0.85rem;
     }
     </style>
     """,
@@ -153,7 +188,7 @@ def page_dashboard():
             "return_pct": st.column_config.NumberColumn("수익률", format="%.2f%%"),
             "matures_at": "만기",
         },
-        hide_index=True, use_container_width=True,
+        hide_index=True, width="stretch",
     )
 
     st.markdown("#### 계좌 구성 (평가액)")
@@ -166,14 +201,35 @@ def page_dashboard():
             """SELECT date, SUM(principal) principal, SUM(market_value) market_value
                FROM monthly_snapshots GROUP BY date ORDER BY date"""
         ).fetchall()
-    if rows:
+    if not rows:
+        st.caption("월별 스냅샷이 아직 없습니다. '월 납입' 메뉴에서 월말 처리 시 누적됩니다.")
+    else:
         tdf = pd.DataFrame([dict(r) for r in rows])
         tdf["date"] = pd.to_datetime(tdf["date"])
-        tdf = tdf.set_index("date")
-        tdf.columns = ["원금", "평가액"]
-        st.line_chart(tdf)
-    else:
-        st.caption("월별 스냅샷이 아직 없습니다. '월 납입' 메뉴에서 월말 처리 시 누적됩니다.")
+        st.caption(f"스냅샷 {len(tdf)}건 ({tdf['date'].min().date()} ~ {tdf['date'].max().date()})")
+
+        long_df = tdf.melt(id_vars="date", value_vars=["principal", "market_value"],
+                           var_name="구분", value_name="금액")
+        long_df["구분"] = long_df["구분"].map({"principal": "원금", "market_value": "평가액"})
+        base = alt.Chart(long_df).encode(
+            x=alt.X("date:T", title="월말"),
+            y=alt.Y("금액:Q", title="원", axis=alt.Axis(format=",.0f")),
+            color=alt.Color("구분:N"),
+            tooltip=[alt.Tooltip("date:T", title="월말"),
+                     alt.Tooltip("구분:N"),
+                     alt.Tooltip("금액:Q", format=",.0f")],
+        )
+        chart = (base.mark_line() + base.mark_point(size=60)).properties(height=280)
+        st.altair_chart(chart, width="stretch")
+
+        show_df = tdf.rename(columns={"date": "월말", "principal": "원금",
+                                       "market_value": "평가액"}).copy()
+        show_df["월말"] = show_df["월말"].dt.date
+        show_df = show_df.sort_values("월말", ascending=False)
+        show_df["원금"] = _won_col(show_df["원금"])
+        show_df["평가액"] = _won_col(show_df["평가액"])
+        with st.expander("스냅샷 원본 보기"):
+            st.dataframe(show_df, hide_index=True, width="stretch")
 
 
 # -------------------------------------------------------------------
@@ -374,27 +430,6 @@ def page_holdings():
         st.info("보유 종목 없음")
         return
 
-    # 전체 자산 대비 계좌 비중
-    st.markdown("#### 전체 자산 대비 계좌 비중")
-    total_mv = sum(x["평가액"] for x in acc_totals)
-    chart_df = pd.DataFrame(acc_totals).set_index("계좌")["평가액"]
-    st.bar_chart(chart_df)
-
-    ratio_rows = [
-        {
-            "계좌": x["계좌"],
-            "평가액": x["평가액"],
-            "비중": (x["평가액"] / total_mv * 100) if total_mv > 0 else 0.0,
-        }
-        for x in sorted(acc_totals, key=lambda r: -r["평가액"])
-    ]
-    ratio_df = pd.DataFrame(ratio_rows)
-    ratio_df["평가액"] = _won_col(ratio_df["평가액"])
-    st.dataframe(
-        ratio_df, hide_index=True, use_container_width=True,
-        column_config={"비중": st.column_config.NumberColumn(format="%.2f%%")},
-    )
-
     # 계좌별 보유 종목 상세 (전체 펼쳐 표시)
     for a in accs:
         code = a["code"]
@@ -406,11 +441,46 @@ def page_holdings():
         for c in ("평단가", "현재가", "원가", "평가액"):
             df[c] = _won_col(df[c])
         st.dataframe(
-            df, hide_index=True, use_container_width=True,
+            df, hide_index=True, width="stretch",
             column_config={
                 "수익률": st.column_config.NumberColumn(format="%.2f%%"),
             },
         )
+
+    # 전체 자산 대비 계좌 비중 (페이지 최하단)
+    st.markdown("#### 전체 자산 대비 계좌 비중")
+    total_mv = sum(x["평가액"] for x in acc_totals)
+    ratio_rows = [
+        {
+            "계좌": x["계좌"],
+            "평가액": x["평가액"],
+            "비중": (x["평가액"] / total_mv * 100) if total_mv > 0 else 0.0,
+        }
+        for x in sorted(acc_totals, key=lambda r: -r["평가액"])
+    ]
+    pie_df = pd.DataFrame(ratio_rows)
+    pie_chart = (
+        alt.Chart(pie_df)
+        .mark_arc(innerRadius=60, outerRadius=120)
+        .encode(
+            theta=alt.Theta(field="평가액", type="quantitative", stack=True),
+            color=alt.Color(field="계좌", type="nominal", legend=alt.Legend(title="계좌")),
+            tooltip=[
+                alt.Tooltip("계좌:N"),
+                alt.Tooltip("평가액:Q", format=",.0f"),
+                alt.Tooltip("비중:Q", format=".2f"),
+            ],
+        )
+        .properties(height=320)
+    )
+    st.altair_chart(pie_chart, width="stretch")
+
+    disp_df = pie_df.copy()
+    disp_df["평가액"] = _won_col(disp_df["평가액"])
+    st.dataframe(
+        disp_df, hide_index=True, width="stretch",
+        column_config={"비중": st.column_config.NumberColumn(format="%.2f%%")},
+    )
 
 
 # -------------------------------------------------------------------
@@ -437,7 +507,7 @@ def page_history():
             df["From"] = df["From"].map(display_name)
             df["To"] = df["To"].map(display_name)
             df["금액"] = _won_col(df["금액"])
-            st.dataframe(df, hide_index=True, use_container_width=True)
+            st.dataframe(df, hide_index=True, width="stretch")
         else:
             st.info("거래 내역 없음")
 
@@ -458,7 +528,7 @@ def page_history():
         for c in ("원금", "평가액", "수익"):
             df[c] = _won_col(df[c])
         st.dataframe(
-            df, hide_index=True, use_container_width=True,
+            df, hide_index=True, width="stretch",
             column_config={
                 "수익률": st.column_config.NumberColumn(format="%.2f%%"),
             },
@@ -504,7 +574,8 @@ def page_projection():
     final_opt = opt[-1]
     c1, c2, c3, c4, c5, c6 = st.columns(6)
     c1.metric(f"{years}년 후 원금", _fmt_won(final["total_principal"]))
-    c2.metric("비관 평가액", _fmt_won(pes[-1]["total_market_value"]))
+    c2.metric("비관 평가액", _fmt_won(pes[-1]["total_market_value"]),
+              _fmt_pct(pes[-1]["total_return_pct"]))
     c3.metric("중립 평가액", _fmt_won(final["total_market_value"]),
               _fmt_pct(final["total_return_pct"]))
     c4.metric("낙관 평가액", _fmt_won(final_opt["total_market_value"]),
@@ -540,7 +611,7 @@ def page_projection():
               "비관 수익", "중립 수익", "낙관 수익"):
         disp[c] = _won_col(disp[c])
     st.dataframe(
-        disp, hide_index=True, use_container_width=True,
+        disp, hide_index=True, width="stretch",
         column_config={
             "비관 수익률": st.column_config.NumberColumn(format="%.1f%%"),
             "중립 수익률": st.column_config.NumberColumn(format="%.1f%%"),
@@ -565,7 +636,7 @@ def page_projection():
     for c in ("원금", "평가액", "수익"):
         final_df[c] = _won_col(final_df[c])
     st.dataframe(
-        final_df, hide_index=True, use_container_width=True,
+        final_df, hide_index=True, width="stretch",
         column_config={
             "연 기대수익률": st.column_config.NumberColumn(format="%.2f%%"),
         },
@@ -665,7 +736,7 @@ def page_settings():
         df["계좌"] = df["계좌"].map(display_name)
         df["비중"] = df["비중"] * 100
         st.dataframe(
-            df, hide_index=True, use_container_width=True,
+            df, hide_index=True, width="stretch",
             column_config={"비중": st.column_config.NumberColumn(format="%.1f%%")},
         )
         st.caption(
