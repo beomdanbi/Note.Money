@@ -8,14 +8,16 @@ from .db import get_conn, init_db, reset_db
 SEED_DATE = "2026-04-22"
 
 # (code, name, kind, monthly_deposit, matures_at, cycle_months, interest_rate, tax_deductible)
+# 2026-05-31~ 월 납입 조정: SAVINGS1/2 50만→20만, STOCK 신규 60만(VT)
 ACCOUNTS = [
-    ("SAVINGS1", "적금1",                   "SAVINGS",   500_000, "2027-03-02", 12, 0.049, 0),
-    ("SAVINGS2", "적금2",                   "SAVINGS",   500_000, "2027-03-02", 12, 0.049, 0),
+    ("SAVINGS1", "적금1",                   "SAVINGS",   200_000, "2027-03-02", 12, 0.049, 0),
+    ("SAVINGS2", "적금2",                   "SAVINGS",   200_000, "2027-03-02", 12, 0.049, 0),
     ("ISA",      "ISA",                     "ISA",       500_000, "2027-05-31", 36, 0.000, 0),
     ("PENSION1", "연금저축1(세액공제)",      "PENSION",   500_000, None,          0, 0.000, 1),
     ("PENSION2", "연금저축2(공제X)",         "PENSION",   300_000, None,          0, 0.000, 0),
     ("PENSION3", "연금저축3(공제X-ISA연계)", "PENSION",         0, None,          0, 0.000, 0),
     ("IRP",      "IRP(세액공제)",            "IRP",       250_000, None,          0, 0.000, 1),
+    ("STOCK",    "주식계좌",                 "STOCK",     600_000, None,          0, 0.000, 0),
     ("CASH",     "현금",                    "CASH",            0, None,          0, 0.000, 0),
 ]
 
@@ -104,12 +106,18 @@ ALLOCATIONS: dict[str, list[tuple[str, str, float]]] = {
         ("160580", "TIGER 구리실물",                0.05),
         ("261220", "KODEX WTI원유선물(H)",          0.05),
     ],
+    # KRW 누적 방식: 실제 매수는 __STOCK__ 가상 티커로 KRW 적립.
+    # VT 비중은 projection.weighted_cagr 산정용 (미래가치 시뮬에서 VT CAGR 사용).
+    "STOCK": [
+        ("VT", "Vanguard Total World Stock ETF",   1.00),
+    ],
 }
 
-# 내부 가상 종목 (적금/현금) - 가격은 항상 1원
+# 내부 가상 종목 (적금/현금/주식 KRW누적) - 가격은 항상 1원
 INTERNAL_TICKERS = {
     "__SAVINGS__": "적금 잔액",
     "__CASH__":    "현금 잔액",
+    "__STOCK__":   "주식 잔액",
 }
 
 # 상장 이전 구간 대체 지수 (yfinance 심볼)
@@ -309,5 +317,26 @@ def apply_opening_balances(prices: dict[str, float]) -> list[str]:
                 "INSERT OR REPLACE INTO prices(ticker, date, close, source) VALUES ('__CASH__', ?, 1, 'internal')",
                 (SEED_DATE,),
             )
+
+        # ---- 4) STOCK 계좌 빈 holding 보장 (KRW 누적) ----
+        stock_row = conn.execute(
+            "SELECT id FROM accounts WHERE code = 'STOCK'"
+        ).fetchone()
+        if stock_row is not None:
+            stock_id = stock_row["id"]
+            exists = conn.execute(
+                "SELECT 1 FROM holdings WHERE account_id = ? AND ticker = '__STOCK__'",
+                (stock_id,),
+            ).fetchone()
+            if not exists:
+                conn.execute(
+                    """INSERT OR REPLACE INTO holdings
+                       (account_id, ticker, shares, cost_basis) VALUES (?, '__STOCK__', 0, 0)""",
+                    (stock_id,),
+                )
+                conn.execute(
+                    "INSERT OR REPLACE INTO prices(ticker, date, close, source) VALUES ('__STOCK__', ?, 1, 'internal')",
+                    (SEED_DATE,),
+                )
 
     return skipped

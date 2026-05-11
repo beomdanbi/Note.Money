@@ -83,7 +83,7 @@ def print_holdings(code: str, on_date: date) -> None:
         cb = int(h["cost_basis"])
         if shares <= 0 and cb <= 0:
             continue
-        if ticker in ("__CASH__", "__SAVINGS__"):
+        if ticker in ("__CASH__", "__SAVINGS__", "__STOCK__"):
             px = 1.0
         else:
             px, _ = resolve_price(ticker, on_date)

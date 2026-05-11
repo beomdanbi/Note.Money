@@ -4,7 +4,8 @@
       "PowerShell(python --version 2>&1; Write-Output \"----\"; where.exe python 2>&1)",
       "PowerShell(Get-Command *)",
       "Bash(python -c ' *)",
-      "Bash(PYTHONIOENCODING=utf-8 grep -nE 'st\\\\.\\(header|subheader|markdown\\)\\\\\\(' ui_streamlit.py)"
+      "Bash(PYTHONIOENCODING=utf-8 grep -nE 'st\\\\.\\(header|subheader|markdown\\)\\\\\\(' ui_streamlit.py)",
+      "Bash(python -c \"import sqlite3; c = sqlite3.connect\\('data/portfolio.db'\\); print\\('--- accounts ---'\\); [print\\(dict\\(r\\)\\) for r in c.execute\\('SELECT id, code, name, kind, monthly_deposit, active FROM accounts ORDER BY id'\\).fetchall\\(\\) if \\(lambda: True\\)\\(\\)]\")"
     ]
   }
 }

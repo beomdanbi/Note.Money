@@ -149,7 +149,7 @@ def resolve_price(ticker: str, d: date, use_proxy: bool = True) -> tuple[float |
         return cached, "cache"
 
     # 내부 가상 티커
-    if ticker in ("__CASH__", "__SAVINGS__"):
+    if ticker in ("__CASH__", "__SAVINGS__", "__STOCK__"):
         return 1.0, "internal"
 
     # KR 티커(6자리, 숫자 또는 알파벳 혼용) 우선 pykrx

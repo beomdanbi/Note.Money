@@ -34,6 +34,7 @@ TICKER_ASSET_CLASS = {
     "473980": "mmf",
     "132030": "commodity", "144600": "commodity",
     "160580": "commodity", "261220": "commodity",
+    "VT":     "equity_us",  # 글로벌이지만 미국 비중 ~60%, 폴백용
 }
 
 

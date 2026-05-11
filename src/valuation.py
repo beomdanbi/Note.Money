@@ -24,7 +24,7 @@ def account_market_value(code: str, on_date: date) -> int:
         shares = float(h["shares"])
         if shares <= 0:
             continue
-        if ticker in ("__CASH__", "__SAVINGS__"):
+        if ticker in ("__CASH__", "__SAVINGS__", "__STOCK__"):
             px = 1.0
         else:
             px, _ = resolve_price(ticker, on_date)

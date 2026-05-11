@@ -16,7 +16,15 @@ DISPLAY_NAMES = {
     "PENSION2": "연금저축2",
     "PENSION3": "연금저축3",
     "IRP":      "IRP",
+    "STOCK":    "주식계좌",
     "CASH":     "현금",
+}
+
+# 잔액 단순 KRW 누적 계좌 → 가상 티커 매핑
+_VIRT_TICKER = {
+    "SAVINGS": "__SAVINGS__",
+    "CASH":    "__CASH__",
+    "STOCK":   "__STOCK__",
 }
 
 
@@ -69,9 +77,9 @@ def deposit(account_code: str, amount: int, d: date, note: str = "월 납입",
             (d.isoformat(), acc["id"], int(amount), note),
         )
         kind = acc["kind"]
-        if kind in ("SAVINGS", "CASH"):
-            virt = "__SAVINGS__" if kind == "SAVINGS" else "__CASH__"
-            _add_to_holding(conn, acc["id"], virt, shares_delta=amount, cost_delta=amount)
+        if kind in _VIRT_TICKER:
+            _add_to_holding(conn, acc["id"], _VIRT_TICKER[kind],
+                            shares_delta=amount, cost_delta=amount)
             return
 
     if allocate:
@@ -89,9 +97,9 @@ def withdraw(account_code: str, amount: int, d: date, note: str = "출금",
             (d.isoformat(), acc["id"], int(amount), note),
         )
         kind = acc["kind"]
-        if kind in ("SAVINGS", "CASH"):
-            virt = "__SAVINGS__" if kind == "SAVINGS" else "__CASH__"
-            _add_to_holding(conn, acc["id"], virt, shares_delta=-amount, cost_delta=-amount)
+        if kind in _VIRT_TICKER:
+            _add_to_holding(conn, acc["id"], _VIRT_TICKER[kind],
+                            shares_delta=-amount, cost_delta=-amount)
             return
 
     if liquidate:
